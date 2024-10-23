@@ -7,7 +7,8 @@ function App() {
     const [evaluationData, setEvaluationData] = useState('');
     const [combinedExpression, setCombinedExpression] = useState('');
     const [evaluateResult, setEvaluateResult] = useState('');
-    const [allRules, setAllRules] = useState([]);
+    const [allRules, setAllRules] = useState([]); // Initialize as empty array
+    const [loading, setLoading] = useState(false); // Optional loading state
 
     // Fetch all rules on page load
     useEffect(() => {
@@ -15,16 +16,19 @@ function App() {
     }, []);
 
     const fetchRules = async () => {
+        setLoading(true); // Start loading
         try {
             const response = await fetch('http://localhost:8080/api/rule');
             const data = await response.json();
             if (data.success) {
-                setAllRules(data.data);
+                setAllRules(data.data || []); // Ensure allRules is set to an array
             } else {
                 alert(`Error fetching rules: ${data.error}`);
             }
         } catch (error) {
             alert('Error connecting to backend: ' + error.message);
+        } finally {
+            setLoading(false); // End loading
         }
     };
 
@@ -105,11 +109,19 @@ function App() {
             {/* Sidebar for displaying all rules */}
             <div className="sidebar">
                 <h3>All Rules</h3>
-                <ul>
-                    {allRules.map(rule => (
-                        <li key={rule.id}>{rule.id}: {rule.expression}</li>
-                    ))}
-                </ul>
+                {loading ? ( // Show loading state
+                    <p>Loading...</p>
+                ) : (
+                    <ul>
+                        {allRules.length > 0 ? ( // Check if rules are available
+                            allRules.map(rule => (
+                                <li key={rule.id}>{rule.id}: {rule.expression}</li>
+                            ))
+                        ) : (
+                            <li>No rules available</li> // Message if no rules exist
+                        )}
+                    </ul>
+                )}
             </div>
 
             {/* Main content for create, combine, evaluate */}
@@ -135,6 +147,12 @@ function App() {
 
                 <div className="box">
                     <h3>Combine Rules</h3>
+                    <input
+                        type="text"
+                        placeholder="Rule ID to Combine"
+                        value={ruleID} // Reuse the same state for simplicity
+                        onChange={(e) => setRuleID(e.target.value)}
+                    />
                     <button className="button" onClick={combineRules}>
                         Combine Rules
                     </button>

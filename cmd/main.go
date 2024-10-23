@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -82,6 +83,7 @@ func main() {
     router.HandleFunc("/api/rules/combine", combineRules).Methods("POST")
     router.HandleFunc("/api/rules/evaluate", evaluateRules).Methods("POST")
     router.HandleFunc("/api/rule", getAllRules).Methods("GET")
+    router.HandleFunc("/api/rules/clean", cleanDatabase).Methods("DELETE")
 
 
     // CORS middleware
@@ -106,6 +108,9 @@ func createRule(w http.ResponseWriter, r *http.Request) {
     // Trim spaces from rule ID
     rule.ID = strings.TrimSpace(rule.ID)
 
+    // Preprocess the expression: trim spaces, convert to lowercase, and remove redundant spaces
+    rule.Expression = cleanExpression(rule.Expression)
+
     // Validate rule syntax
     if _, err := parser.ParseRule(rule.Expression); err != nil {
         sendResponse(w, false, nil, fmt.Sprintf("Invalid rule syntax: %v", err))
@@ -129,6 +134,19 @@ func createRule(w http.ResponseWriter, r *http.Request) {
 
     sendResponse(w, true, rule, "")
 }
+
+// Helper function to clean the expression
+func cleanExpression(expr string) string {
+    // Convert to lowercase
+    expr = strings.ToLower(expr)
+
+    // Remove redundant spaces (trim and replace multiple spaces with a single space)
+    expr = strings.TrimSpace(expr)
+    expr = strings.Join(strings.Fields(expr), " ")
+
+    return expr
+}
+
 
 func getAllRules(w http.ResponseWriter, r *http.Request) {
     // Query all rules from the MongoDB collection
@@ -269,17 +287,56 @@ func combineRuleExpressions(rules []string) string {
         return rules[0]
     }
 
-    // Wrap each rule in parentheses and join with AND
-    wrappedRules := make([]string, len(rules))
+    // Calculate cost for each rule
+    ruleCosts := make([]struct {
+        rule string
+        cost int
+    }, len(rules))
+
     for i, rule := range rules {
-        if strings.Contains(rule, "OR") || strings.Contains(rule, " or ") {
-            wrappedRules[i] = "(" + rule + ")"
-        } else {
-            wrappedRules[i] = rule
+        ruleCosts[i] = struct {
+            rule string
+            cost int
+        }{
+            rule: rule,
+            cost: calculateRuleCost(rule),
         }
     }
-    return strings.Join(wrappedRules, " AND ")
+
+    // Sort rules by cost (ascending)
+    sort.Slice(ruleCosts, func(i, j int) bool {
+        return ruleCosts[i].cost < ruleCosts[j].cost
+    })
+
+    // Combine the rules in cost-optimized order
+    var combinedRules []string
+    for _, rc := range ruleCosts {
+        if strings.Contains(rc.rule, "OR") || strings.Contains(rc.rule, " or ") {
+            combinedRules = append(combinedRules, "("+rc.rule+")")
+        } else {
+            combinedRules = append(combinedRules, rc.rule)
+        }
+    }
+
+    // Combine them using AND logic
+    return strings.Join(combinedRules, " AND ")
 }
+
+// Example of a cost calculation function based on complexity
+func calculateRuleCost(rule string) int {
+    // Cost model can be based on length or complexity
+    // For simplicity, let's assume cost = number of conditions (AND/OR)
+    cost := 0
+    conditions := []string{" AND ", " OR ", " and ", " or "}
+    
+    // Count occurrences of AND/OR (i.e., the number of conditions)
+    for _, cond := range conditions {
+        cost += strings.Count(rule, cond)
+    }
+    
+    return cost
+}
+
 
 func sendResponse(w http.ResponseWriter, success bool, data interface{}, errMsg string) {
     w.Header().Set("Content-Type", "application/json")
@@ -295,4 +352,17 @@ func sendResponse(w http.ResponseWriter, success bool, data interface{}, errMsg 
     }
 
     json.NewEncoder(w).Encode(response)
+}
+
+
+func cleanDatabase(w http.ResponseWriter, r *http.Request) {
+    // Clear all rules from the database
+    collection := db.Collection("rules")
+    _, err := collection.DeleteMany(context.TODO(), bson.M{})
+    if err != nil {
+        sendResponse(w, false, nil, fmt.Sprintf("Failed to clean database: %v", err))
+        return
+    }
+
+    sendResponse(w, true, nil, "Database cleaned successfully")
 }

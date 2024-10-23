@@ -1,12 +1,12 @@
 package parser
 
 import (
-	"fmt"
-	"strconv"
-	"strings"
-	"unicode"
+    "fmt"
+    "strconv"
+    "strings"
+    "unicode"
 
-	"github.com/Ayush/rule-engine/internal/ast"
+    "github.com/Ayush/rule-engine/internal/ast"
 )
 
 type TokenType int
@@ -32,6 +32,7 @@ type Parser struct {
     current int
 }
 
+// Tokenize function updated for case-insensitivity and trimming
 func Tokenize(input string) ([]Token, error) {
     var tokens []Token
     input = strings.TrimSpace(input)
@@ -55,7 +56,7 @@ func Tokenize(input string) ([]Token, error) {
             if j >= len(input) {
                 return nil, fmt.Errorf("unterminated string literal")
             }
-            tokens = append(tokens, Token{Type: VALUE, Value: input[i+1:j]})
+            tokens = append(tokens, Token{Type: VALUE, Value: strings.TrimSpace(input[i+1:j])})
             i = j
             
         case unicode.IsLetter(rune(input[i])):
@@ -63,14 +64,14 @@ func Tokenize(input string) ([]Token, error) {
             for j < len(input) && (unicode.IsLetter(rune(input[j])) || unicode.IsDigit(rune(input[j]))) {
                 j++
             }
-            word := input[i:j]
-            switch strings.ToUpper(word) {
+            word := strings.TrimSpace(input[i:j])
+            switch strings.ToUpper(word) { // Case-insensitive comparison for AND/OR
             case "AND":
                 tokens = append(tokens, Token{Type: AND, Value: "AND"})
             case "OR":
                 tokens = append(tokens, Token{Type: OR, Value: "OR"})
             default:
-                tokens = append(tokens, Token{Type: FIELD, Value: word})
+                tokens = append(tokens, Token{Type: FIELD, Value: strings.ToLower(word)}) // Convert fields to lowercase
             }
             i = j - 1
             
@@ -79,15 +80,13 @@ func Tokenize(input string) ([]Token, error) {
             for j < len(input) && (unicode.IsDigit(rune(input[j])) || input[j] == '.') {
                 j++
             }
-            tokens = append(tokens, Token{Type: VALUE, Value: input[i:j]})
+            tokens = append(tokens, Token{Type: VALUE, Value: strings.TrimSpace(input[i:j])})
             i = j - 1
             
         case input[i] == '>' || input[i] == '<' || input[i] == '=':
             tokens = append(tokens, Token{Type: COMPARISON, Value: string(input[i])})
         }
     }
-
-	// fmt.Println(tokens)
     
     return tokens, nil
 }
@@ -100,13 +99,11 @@ func (p *Parser) Parse(tokens []Token) (*ast.Node, error) {
 
 func (p *Parser) parseExpression() (*ast.Node, error) {
     if p.match(LPAREN) {
-        // Start a new sub-expression
         expr, err := p.parseParenExpression()
         if err != nil {
             return nil, err
         }
         
-        // Check for AND/OR after the parenthesized expression
         if p.match(AND) || p.match(OR) {
             op := p.previous().Value
             rightExpr, err := p.parseExpression()
@@ -172,27 +169,22 @@ func (p *Parser) parseExpression() (*ast.Node, error) {
     return nil, fmt.Errorf("unexpected token")
 }
 
-// New helper function to handle parenthesized expressions
 func (p *Parser) parseParenExpression() (*ast.Node, error) {
-    parenCount := 1 // Start with 1 for the opening parenthesis we just matched
-    
+    parenCount := 1
     var expr *ast.Node
     var err error
     
-    // Parse the expression inside the parentheses
     expr, err = p.parseExpression()
     if err != nil {
         return nil, err
     }
     
-    // Keep track of nested parentheses
     for parenCount > 0 && p.current < len(p.tokens) {
         if p.match(LPAREN) {
             parenCount++
         } else if p.match(RPAREN) {
             parenCount--
         } else if p.current < len(p.tokens) {
-            // Move to next token if it's neither parenthesis
             p.advance()
         }
     }
@@ -206,7 +198,6 @@ func (p *Parser) parseParenExpression() (*ast.Node, error) {
     return expr, nil
 }
 
-// Helper method to advance the current token
 func (p *Parser) advance() {
     if p.current < len(p.tokens) {
         p.current++
