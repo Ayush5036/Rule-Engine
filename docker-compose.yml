@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: . 
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mongo
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/mydatabase
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./rule-engine-frontend    # Updated path to reflect your frontend directory name
+    dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    networks:
+      - app-network
+
+  mongo:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    networks:
+      - app-network
+    volumes:
+      - mongo-data:/data/db
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mongo-data:
