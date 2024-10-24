@@ -36,18 +36,18 @@ type Parser struct {
 func Tokenize(input string) ([]Token, error) {
     var tokens []Token
     input = strings.TrimSpace(input)
-    
+
     for i := 0; i < len(input); i++ {
         switch {
         case unicode.IsSpace(rune(input[i])):
             continue
-            
+
         case input[i] == '(':
             tokens = append(tokens, Token{Type: LPAREN, Value: "("})
-            
+
         case input[i] == ')':
             tokens = append(tokens, Token{Type: RPAREN, Value: ")"})
-            
+
         case input[i] == '\'':
             j := i + 1
             for j < len(input) && input[j] != '\'' {
@@ -58,7 +58,7 @@ func Tokenize(input string) ([]Token, error) {
             }
             tokens = append(tokens, Token{Type: VALUE, Value: strings.TrimSpace(input[i+1:j])})
             i = j
-            
+
         case unicode.IsLetter(rune(input[i])):
             j := i
             for j < len(input) && (unicode.IsLetter(rune(input[j])) || unicode.IsDigit(rune(input[j]))) {
@@ -74,7 +74,7 @@ func Tokenize(input string) ([]Token, error) {
                 tokens = append(tokens, Token{Type: FIELD, Value: strings.ToLower(word)}) // Convert fields to lowercase
             }
             i = j - 1
-            
+
         case unicode.IsDigit(rune(input[i])):
             j := i
             for j < len(input) && (unicode.IsDigit(rune(input[j])) || input[j] == '.') {
@@ -82,19 +82,32 @@ func Tokenize(input string) ([]Token, error) {
             }
             tokens = append(tokens, Token{Type: VALUE, Value: strings.TrimSpace(input[i:j])})
             i = j - 1
-            
+
         case input[i] == '>' || input[i] == '<' || input[i] == '=':
             tokens = append(tokens, Token{Type: COMPARISON, Value: string(input[i])})
+
+        default:
+            return nil, fmt.Errorf("unexpected character: %c", input[i])
         }
     }
-    
+
     return tokens, nil
 }
 
 func (p *Parser) Parse(tokens []Token) (*ast.Node, error) {
     p.tokens = tokens
     p.current = 0
-    return p.parseExpression()
+    node, err := p.parseExpression()
+    if err != nil {
+        return nil, err
+    }
+
+    // Ensure there are no leftover tokens after parsing
+    if !p.isAtEnd() {
+        return nil, fmt.Errorf("unexpected tokens remaining after parsing")
+    }
+
+    return node, nil
 }
 
 func (p *Parser) parseExpression() (*ast.Node, error) {
@@ -103,98 +116,58 @@ func (p *Parser) parseExpression() (*ast.Node, error) {
         if err != nil {
             return nil, err
         }
-        
-        if p.match(AND) || p.match(OR) {
-            op := p.previous().Value
-            rightExpr, err := p.parseExpression()
-            if err != nil {
-                return nil, err
-            }
-            
-            if rightExpr.Type == "operator" && rightExpr.Operator == op {
-                rightExpr.Children = append([]*ast.Node{expr}, rightExpr.Children...)
-                return rightExpr, nil
-            }
-            
-            return &ast.Node{
-                Type:     "operator",
-                Operator: op,
-                Children: []*ast.Node{expr, rightExpr},
-            }, nil
-        }
-        
+
         return expr, nil
     }
-    
+
     if p.match(FIELD) {
         field := p.previous().Value
         if !p.match(COMPARISON) {
-            return nil, fmt.Errorf("expected comparison operator")
+            return nil, fmt.Errorf("expected comparison operator after field")
         }
         operator := p.previous().Value
         if !p.match(VALUE) {
-            return nil, fmt.Errorf("expected value")
+            return nil, fmt.Errorf("expected value after comparison operator")
         }
         value := p.previous().Value
-        
+
         node := &ast.Node{
             Type:     "operand",
             Field:    field,
             Operator: operator,
             Value:    parseValue(value),
         }
-        
+
         if p.match(AND) || p.match(OR) {
             op := p.previous().Value
             rightExpr, err := p.parseExpression()
             if err != nil {
                 return nil, err
             }
-            
-            if rightExpr.Type == "operator" && rightExpr.Operator == op {
-                rightExpr.Children = append([]*ast.Node{node}, rightExpr.Children...)
-                return rightExpr, nil
-            }
-            
+
             return &ast.Node{
                 Type:     "operator",
                 Operator: op,
                 Children: []*ast.Node{node, rightExpr},
             }, nil
         }
-        
+
         return node, nil
     }
-    
+
     return nil, fmt.Errorf("unexpected token")
 }
 
 func (p *Parser) parseParenExpression() (*ast.Node, error) {
-    parenCount := 1
-    var expr *ast.Node
-    var err error
-    
-    expr, err = p.parseExpression()
+    expr, err := p.parseExpression()
     if err != nil {
         return nil, err
     }
-    
-    for parenCount > 0 && p.current < len(p.tokens) {
-        if p.match(LPAREN) {
-            parenCount++
-        } else if p.match(RPAREN) {
-            parenCount--
-        } else if p.current < len(p.tokens) {
-            p.advance()
-        }
+
+    if !p.match(RPAREN) {
+        return nil, fmt.Errorf("expected closing parenthesis")
     }
-    
-    if parenCount > 0 {
-        return nil, fmt.Errorf("mismatched parentheses: missing %d closing parenthesis", parenCount)
-    } else if parenCount < 0 {
-        return nil, fmt.Errorf("mismatched parentheses: extra closing parenthesis")
-    }
-    
+
     return expr, nil
 }
 
@@ -224,11 +197,11 @@ func parseValue(value string) interface{} {
     if i, err := strconv.Atoi(value); err == nil {
         return i
     }
-    
+
     if f, err := strconv.ParseFloat(value, 64); err == nil {
         return f
     }
-    
+
     return value
 }
 
@@ -237,12 +210,12 @@ func ParseRule(ruleString string) (*ast.Node, error) {
     if err != nil {
         return nil, fmt.Errorf("tokenization error: %w", err)
     }
-    
+
     parser := &Parser{}
     ast, err := parser.Parse(tokens)
     if err != nil {
         return nil, fmt.Errorf("parsing error: %w", err)
     }
-    
+
     return ast, nil
 }

@@ -3,6 +3,7 @@ package evaluator
 import (
     "fmt"
     "reflect"
+    "strings"
     "github.com/Ayush/rule-engine/internal/ast"
 )
 
@@ -59,8 +60,8 @@ func compareValues(a, b interface{}, operator string) (bool, error) {
 
     // Handle string comparison
     if aValue.Kind() == reflect.String || bValue.Kind() == reflect.String {
-        aStr := fmt.Sprintf("%v", a)
-        bStr := fmt.Sprintf("%v", b)
+        aStr := strings.ToLower(fmt.Sprintf("%v", a))
+        bStr := strings.ToLower(fmt.Sprintf("%v", b))
         switch operator {
         case "=":
             return aStr == bStr, nil
